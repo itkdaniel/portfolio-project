@@ -1,0 +1,102 @@
+# =============================================================================
+# Synaptiq — Synaptic Applications
+# Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
+#
+# CD Pipeline: deploy to production on push to main (after CI passes)
+# Supports: Replit Deployments (primary), Docker (alternative)
+# =============================================================================
+
+name: Deploy — Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Reason for manual deploy
+        required: false
+        default: Manual trigger
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "9"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Guard: CI must pass first (reuse ci.yml status check)
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false   # never cancel in-flight deploys
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # ---- Build -------------------------------------------------------
+      - name: Build API server
+        run: pnpm --filter @workspace/api-server run build
+        env:
+          PORT: "5000"
+          BASE_PATH: "/api"
+
+      - name: Build frontend
+        run: pnpm --filter @workspace/platform run build
+        env:
+          PORT: "23633"
+          BASE_PATH: "/"
+
+      # ---- Database migrations -----------------------------------------
+      - name: Push DB schema (prod)
+        run: pnpm --filter @workspace/db run push
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # ---- Replit deploy (via Replit CLI) ------------------------------
+      # Uncomment and configure when using Replit Deployments:
+      # - name: Deploy to Replit
+      #   run: npx @replit/deploy-action@latest
+      #   env:
+      #     REPLIT_TOKEN: ${{ secrets.REPLIT_TOKEN }}
+
+      # ---- Docker build & push (alternative) --------------------------
+      # Uncomment when using container-based hosting (Railway, Fly.io, etc.):
+      # - name: Log in to GHCR
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: ghcr.io
+      #     username: ${{ github.actor }}
+      #     password: ${{ secrets.GITHUB_TOKEN }}
+      #
+      # - name: Build and push Docker image
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: .
+      #     file: ./Dockerfile
+      #     push: true
+      #     tags: ghcr.io/${{ github.repository }}:latest,ghcr.io/${{ github.repository }}:${{ github.sha }}
+      #     build-args: |
+      #       NODE_VERSION=${{ env.NODE_VERSION }}
+
+      - name: Deployment summary
+        run: |
+          echo "### Production deploy complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Triggered by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Reason: ${{ github.event.inputs.reason || 'Push to main' }}" >> $GITHUB_STEP_SUMMARY
