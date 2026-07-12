@@ -1,0 +1,57 @@
+# =============================================================================
+# Synaptiq — Synaptic Applications
+# Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
+#
+# Security: GitHub CodeQL analysis — runs on push, PR, and weekly schedule
+# =============================================================================
+
+name: CodeQL Security Scan
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    # Weekly scan every Sunday at 03:00 UTC
+    - cron: "0 3 * * 0"
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Extended security-and-quality query suite
+          queries: security-extended,security-and-quality
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "9"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
