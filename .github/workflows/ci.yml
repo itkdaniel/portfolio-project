@@ -1,0 +1,147 @@
+# =============================================================================
+# Synaptiq — Synaptic Applications
+# Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
+#
+# CI Pipeline: typecheck, lint, test on every push and pull-request to main/dev
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "9"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Install dependencies (cached)
+  # ---------------------------------------------------------------------------
+  install:
+    name: Install dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+  # ---------------------------------------------------------------------------
+  # TypeScript typecheck (all packages)
+  # ---------------------------------------------------------------------------
+  typecheck:
+    name: TypeScript typecheck
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+
+  # ---------------------------------------------------------------------------
+  # Unit / DDT / BDD / Regression / E2E test suites (Vitest)
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test suites
+    needs: install
+    runs-on: ubuntu-latest
+    env:
+      # Provide a test DB; the API server uses Drizzle which reads DATABASE_URL
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run test suites (unit/ddt/bdd/regression/e2e)
+        run: pnpm --filter @workspace/api-server run test
+
+  # ---------------------------------------------------------------------------
+  # Build — verify production bundles compile cleanly
+  # ---------------------------------------------------------------------------
+  build:
+    name: Production build
+    needs: [typecheck, test]
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build API server
+        run: pnpm --filter @workspace/api-server run build
+        env:
+          PORT: "5000"
+          BASE_PATH: "/api"
+
+      - name: Build frontend (platform)
+        run: pnpm --filter @workspace/platform run build
+        env:
+          PORT: "23633"
+          BASE_PATH: "/"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: |
+            artifacts/api-server/dist/
+            artifacts/platform/dist/
+          retention-days: 7
