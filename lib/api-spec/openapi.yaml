@@ -1,0 +1,1052 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Synaptiq API specification — Synaptic Applications
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: Storage
+    description: Object storage upload and serving endpoints.
+  - name: Users
+    description: User accounts and role management (RBAC).
+  - name: Profile
+    description: Resume / portfolio profile management.
+  - name: Agent
+    description: Trending-topic scrape / process / train data pipeline.
+  - name: Tests
+    description: Test suite execution and dashboard.
+  - name: KnowledgeGraph
+    description: Live knowledge graph of the platform's own relational data.
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /storage/uploads/request-url:
+    post:
+      tags: [Storage]
+      operationId: requestUploadUrl
+      summary: Request a presigned URL for file upload
+      description: |
+        Returns a presigned GCS URL for direct upload. The client sends JSON
+        metadata here, then uploads the file directly to the returned URL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL generated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+        "400":
+          description: Missing or invalid required fields.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Failed to generate upload URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /storage/public-objects/{filePath}:
+    get:
+      tags: [Storage]
+      operationId: getPublicObject
+      summary: Serve a public asset from PUBLIC_OBJECT_SEARCH_PATHS
+      description: |
+        Unconditionally public — no authentication or ACL checks.
+        Searches PUBLIC_OBJECT_SEARCH_PATHS for the given file path.
+      parameters:
+        - name: filePath
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Relative file path within the public search paths.
+      responses:
+        "200":
+          description: Object content streamed with correct Content-Type.
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: File not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Failed to serve public object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /storage/objects/{objectPath}:
+    get:
+      tags: [Storage]
+      operationId: getStorageObject
+      summary: Serve an object entity from PRIVATE_OBJECT_DIR
+      description: |
+        Serves object entities uploaded via presigned URLs. These can optionally
+        be protected with authentication or ACL checks based on the use case.
+      parameters:
+        - name: objectPath
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Object path within the private object dir (e.g. `uploads/some-uuid`).
+      responses:
+        "200":
+          description: Object content streamed with correct Content-Type.
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Object not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Failed to serve object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /users/me:
+    get:
+      tags: [Users]
+      operationId: getCurrentUser
+      summary: Get (and JIT-provision) the current authenticated user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: List all users (admin only)
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "403":
+          description: Forbidden — admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /users/{id}/role:
+    patch:
+      tags: [Users]
+      operationId: updateUserRole
+      summary: Update a user's role (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRoleUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "403":
+          description: Forbidden — admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /profile/me:
+    get:
+      tags: [Profile]
+      operationId: getMyProfile
+      summary: Get the current user's resume/portfolio profile
+      responses:
+        "200":
+          description: Profile (creates an empty one on first access)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    put:
+      tags: [Profile]
+      operationId: updateMyProfile
+      summary: Create or update the current user's resume/portfolio profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileInput"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /profile/directory:
+    get:
+      tags: [Profile]
+      operationId: listPublicProfiles
+      summary: List all public profiles (portfolio directory)
+      responses:
+        "200":
+          description: List of public profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicProfile"
+
+  /profile/{userId}:
+    get:
+      tags: [Profile]
+      operationId: getPublicProfile
+      summary: Get a single user's public portfolio profile
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Public profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicProfile"
+        "404":
+          description: Profile not found or not public
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /agent/sources:
+    get:
+      tags: [Agent]
+      operationId: listDataSources
+      summary: List trending-topic data sources
+      responses:
+        "200":
+          description: List of data sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DataSource"
+
+  /agent/scrape:
+    post:
+      tags: [Agent]
+      operationId: runScrape
+      summary: Scrape a public trending-topic data source (--scrape=<source> --path=<dest>)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScrapeInput"
+      responses:
+        "201":
+          description: Completed scrape job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeJob"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden — admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "502":
+          description: Upstream source fetch failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /agent/scrape-jobs:
+    get:
+      tags: [Agent]
+      operationId: listScrapeJobs
+      summary: List scrape jobs
+      responses:
+        "200":
+          description: List of scrape jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScrapeJob"
+
+  /agent/scrape-jobs/{id}:
+    get:
+      tags: [Agent]
+      operationId: getScrapeJob
+      summary: Get a scrape job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Scrape job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeJob"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /agent/process:
+    post:
+      tags: [Agent]
+      operationId: runProcess
+      summary: Process raw scraped data into engineered features (--process=<dest> --features=<csv>)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessInput"
+      responses:
+        "201":
+          description: Completed feature set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureSet"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden — admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Scrape job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /agent/feature-sets:
+    get:
+      tags: [Agent]
+      operationId: listFeatureSets
+      summary: List feature sets
+      responses:
+        "200":
+          description: List of feature sets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeatureSet"
+
+  /agent/feature-sets/{id}:
+    get:
+      tags: [Agent]
+      operationId: getFeatureSet
+      summary: Get a feature set
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Feature set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureSet"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /agent/train:
+    post:
+      tags: [Agent]
+      operationId: runTrain
+      summary: Train the trending-topic agent on a feature set (--train=<csv>)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrainInput"
+      responses:
+        "201":
+          description: Completed training run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingRun"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden — admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Feature set not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /agent/training-runs:
+    get:
+      tags: [Agent]
+      operationId: listTrainingRuns
+      summary: List training runs
+      responses:
+        "200":
+          description: List of training runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrainingRun"
+
+  /agent/training-runs/{id}:
+    get:
+      tags: [Agent]
+      operationId: getTrainingRun
+      summary: Get a training run, including predicted trending topics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Training run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingRun"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /tests/suites:
+    get:
+      tags: [Tests]
+      operationId: listTestSuites
+      summary: List test suite types with their most recent run summary
+      responses:
+        "200":
+          description: List of test suites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TestSuiteSummary"
+
+  /tests/runs:
+    get:
+      tags: [Tests]
+      operationId: listTestRuns
+      summary: List test run history
+      responses:
+        "200":
+          description: List of test runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TestRun"
+    post:
+      tags: [Tests]
+      operationId: runTestSuite
+      summary: Execute a test suite and record its result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestRunInput"
+      responses:
+        "201":
+          description: Completed test run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestRun"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden — admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /tests/runs/{id}:
+    get:
+      tags: [Tests]
+      operationId: getTestRun
+      summary: Get a test run
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Test run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestRun"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /knowledge-graph:
+    get:
+      tags: [KnowledgeGraph]
+      operationId: getKnowledgeGraph
+      summary: Get a live knowledge graph of the platform's relational data
+      description: |
+        Returns every entity in the system (users, profiles, data sources,
+        scrape jobs, feature sets, training runs, test runs) as graph nodes,
+        with edges representing their foreign-key relationships. The client
+        renders this as an interactive, click-to-expand graph.
+      responses:
+        "200":
+          description: Knowledge graph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeGraph"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    UploadUrlRequest:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Original file name.
+        size:
+          type: integer
+          minimum: 1
+          description: File size in bytes.
+        contentType:
+          type: string
+          minLength: 1
+          description: MIME type of the file (e.g. `image/jpeg`).
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL:
+          type: string
+          format: uri
+          description: Presigned GCS URL for PUT upload.
+        objectPath:
+          type: string
+          description: Normalized object path (e.g. `/objects/uploads/uuid`). Store this in your database.
+        metadata:
+          $ref: "#/components/schemas/UploadUrlRequest"
+
+    UserRole:
+      type: string
+      enum: [admin, user]
+
+    User:
+      type: object
+      required: [id, clerkUserId, email, role, createdAt]
+      properties:
+        id:
+          type: integer
+        clerkUserId:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        role:
+          $ref: "#/components/schemas/UserRole"
+        createdAt:
+          type: string
+          format: date-time
+
+    UserRoleUpdate:
+      type: object
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/UserRole"
+
+    Profile:
+      type: object
+      required: [id, userId, headline, summary, skills, isPublic, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        headline:
+          type: ["string", "null"]
+        summary:
+          type: ["string", "null"]
+        skills:
+          type: array
+          items:
+            type: string
+        phone:
+          type: ["string", "null"]
+          description: Decrypted phone number, only ever returned to the profile's owner.
+        githubUrl:
+          type: ["string", "null"]
+        linkedinUrl:
+          type: ["string", "null"]
+        websiteUrl:
+          type: ["string", "null"]
+        resumeObjectPath:
+          type: ["string", "null"]
+        avatarObjectPath:
+          type: ["string", "null"]
+        isPublic:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProfileInput:
+      type: object
+      properties:
+        headline:
+          type: string
+        summary:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        phone:
+          type: string
+        githubUrl:
+          type: string
+        linkedinUrl:
+          type: string
+        websiteUrl:
+          type: string
+        resumeObjectPath:
+          type: string
+        avatarObjectPath:
+          type: string
+        isPublic:
+          type: boolean
+
+    PublicProfile:
+      type: object
+      required: [userId, name, headline, summary, skills]
+      properties:
+        userId:
+          type: integer
+        name:
+          type: string
+        headline:
+          type: ["string", "null"]
+        summary:
+          type: ["string", "null"]
+        skills:
+          type: array
+          items:
+            type: string
+        githubUrl:
+          type: ["string", "null"]
+        linkedinUrl:
+          type: ["string", "null"]
+        websiteUrl:
+          type: ["string", "null"]
+        resumeObjectPath:
+          type: ["string", "null"]
+        avatarObjectPath:
+          type: ["string", "null"]
+
+    DataSourceCategory:
+      type: string
+      enum: [news, tech, crypto, stocks, sports]
+
+    DataSource:
+      type: object
+      required: [id, name, category, baseUrl, description]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        category:
+          $ref: "#/components/schemas/DataSourceCategory"
+        baseUrl:
+          type: string
+        description:
+          type: string
+
+    JobStatus:
+      type: string
+      enum: [pending, running, completed, failed]
+
+    ScrapeInput:
+      type: object
+      required: [dataSourceId]
+      properties:
+        dataSourceId:
+          type: integer
+        path:
+          type: string
+          description: Optional logical destination path/label for the raw dump (mirrors CLI --path=<DEST>).
+
+    ScrapeJob:
+      type: object
+      required: [id, dataSourceId, dataSourceName, status, recordsScraped, createdAt]
+      properties:
+        id:
+          type: integer
+        dataSourceId:
+          type: integer
+        dataSourceName:
+          type: string
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        rawObjectPath:
+          type: ["string", "null"]
+        recordsScraped:
+          type: integer
+        errorMessage:
+          type: ["string", "null"]
+        triggeredByUserId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    ProcessInput:
+      type: object
+      required: [scrapeJobId, features]
+      properties:
+        scrapeJobId:
+          type: integer
+        features:
+          type: array
+          items:
+            type: string
+          description: Requested feature column names (mirrors CLI --features=<CSV>).
+
+    FeatureSet:
+      type: object
+      required: [id, scrapeJobId, status, featureNames, rowCount, createdAt]
+      properties:
+        id:
+          type: integer
+        scrapeJobId:
+          type: integer
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        featureNames:
+          type: array
+          items:
+            type: string
+        rowCount:
+          type: integer
+        csvObjectPath:
+          type: ["string", "null"]
+        errorMessage:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    TrainInput:
+      type: object
+      required: [featureSetId]
+      properties:
+        featureSetId:
+          type: integer
+
+    TrendingTopic:
+      type: object
+      required: [topic, score]
+      properties:
+        topic:
+          type: string
+        score:
+          type: number
+
+    TrainingRun:
+      type: object
+      required: [id, featureSetId, status, createdAt]
+      properties:
+        id:
+          type: integer
+        featureSetId:
+          type: integer
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        metrics:
+          type: ["object", "null"]
+          additionalProperties: true
+        predictedTopics:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrendingTopic"
+        errorMessage:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    TestSuiteType:
+      type: string
+      enum: [unit, ddt, bdd, regression, e2e]
+
+    TestSuiteSummary:
+      type: object
+      required: [suiteType]
+      properties:
+        suiteType:
+          $ref: "#/components/schemas/TestSuiteType"
+        lastRun:
+          oneOf:
+            - $ref: "#/components/schemas/TestRun"
+            - type: "null"
+
+    TestRunInput:
+      type: object
+      required: [suiteType]
+      properties:
+        suiteType:
+          $ref: "#/components/schemas/TestSuiteType"
+
+    TestRun:
+      type: object
+      required: [id, suiteType, status, total, passed, failed, createdAt]
+      properties:
+        id:
+          type: integer
+        suiteType:
+          $ref: "#/components/schemas/TestSuiteType"
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        total:
+          type: integer
+        passed:
+          type: integer
+        failed:
+          type: integer
+        durationMs:
+          type: ["integer", "null"]
+        output:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    KnowledgeGraphNode:
+      type: object
+      required: [id, entityType, label]
+      properties:
+        id:
+          type: string
+          description: "Composite id, e.g. 'user-3' or 'scrapeJob-12'."
+        entityType:
+          type: string
+          enum: [user, profile, dataSource, scrapeJob, featureSet, trainingRun, testRun]
+        label:
+          type: string
+        detail:
+          type: object
+          additionalProperties: true
+
+    KnowledgeGraphEdge:
+      type: object
+      required: [source, target, relation]
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        relation:
+          type: string
+
+    KnowledgeGraph:
+      type: object
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeGraphNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeGraphEdge"
