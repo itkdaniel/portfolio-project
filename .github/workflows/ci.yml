@@ -2,61 +2,62 @@
 # Synaptiq — Synaptic Applications
 # Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
 #
-# CI Pipeline: typecheck, lint, test on every push and pull-request to main/dev
+# .github/workflows/ci.yml
+# Continuous Integration — Python 3 FastAPI backend + TypeScript React frontend.
+#
+# Jobs (run on every push to main/typescript-backend and on PRs to main):
+#   lint-py      — ruff static analysis (Python)
+#   typecheck-ts — tsc --noEmit (TypeScript frontend, unchanged)
+#   test-py      — pytest: unit, DDT, BDD, regression, E2E (all 5 suites)
+#   build-ts     — Vite SPA production build
+#   docker-dev   — docker build smoke test (dev image)
+#   docker-prod  — docker build smoke test (prod image)
 # =============================================================================
 
 name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, typescript-backend]
   pull_request:
-    branches: [main, dev]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: "24"
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
   PNPM_VERSION: "9"
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Install dependencies (cached)
-  # ---------------------------------------------------------------------------
-  install:
-    name: Install dependencies
-    runs-on: ubuntu-latest
+
+  # --------------------------------------------------------------------------
+  # Python linting — ruff
+  # --------------------------------------------------------------------------
+  lint-py:
+    name: "🐍 Lint Python (ruff)"
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-python@v5
         with:
-          version: ${{ env.PNPM_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+      - name: Install ruff
+        run: pip install ruff==0.8.4
 
-      - name: Install
-        run: pnpm install --frozen-lockfile
+      - name: Run ruff check
+        run: ruff check artifacts/api-server/src artifacts/api-server/tests
 
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: pnpm-${{ runner.os }}-
-
-  # ---------------------------------------------------------------------------
-  # TypeScript typecheck (all packages)
-  # ---------------------------------------------------------------------------
-  typecheck:
-    name: TypeScript typecheck
-    needs: install
-    runs-on: ubuntu-latest
+  # --------------------------------------------------------------------------
+  # TypeScript typecheck (frontend — unchanged from v1)
+  # --------------------------------------------------------------------------
+  typecheck-ts:
+    name: "📘 Typecheck TypeScript (tsc)"
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -72,76 +73,164 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
 
-  # ---------------------------------------------------------------------------
-  # Unit / DDT / BDD / Regression / E2E test suites (Vitest)
-  # ---------------------------------------------------------------------------
-  test:
-    name: Test suites
-    needs: install
-    runs-on: ubuntu-latest
+  # --------------------------------------------------------------------------
+  # Python tests — all 5 pytest suites
+  # --------------------------------------------------------------------------
+  test-py:
+    name: "🧪 Test Python (pytest — unit / DDT / BDD / regression / E2E)"
+    runs-on: ubuntu-24.04
+    needs: [lint-py]
+
     env:
-      # Provide a test DB; the API server uses Drizzle which reads DATABASE_URL
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
-      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-      VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
-    steps:
-      - uses: actions/checkout@v4
+      DATABASE_URL: "postgresql+asyncpg://synaptiq:synaptiq_test@localhost:5432/synaptiq_test"
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET || '0000000000000000000000000000000000000000000000000000000000000000' }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY || 'sk_test_placeholder' }}
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder' }}
+      ENVIRONMENT: test
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Run test suites (unit/ddt/bdd/regression/e2e)
-        run: pnpm --filter @workspace/api-server run test
-
-  # ---------------------------------------------------------------------------
-  # Build — verify production bundles compile cleanly
-  # ---------------------------------------------------------------------------
-  build:
-    name: Production build
-    needs: [typecheck, test]
-    runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Build API server
-        run: pnpm --filter @workspace/api-server run build
+    services:
+      postgres:
+        image: postgres:16-alpine
         env:
-          PORT: "5000"
-          BASE_PATH: "/api"
+          POSTGRES_USER: synaptiq
+          POSTGRES_PASSWORD: synaptiq_test
+          POSTGRES_DB: synaptiq_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U synaptiq -d synaptiq_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
-      - name: Build frontend (platform)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Python dependencies (+ aiosqlite for test DB)
+        working-directory: artifacts/api-server
+        run: pip install -r requirements-dev.txt aiosqlite
+
+      - name: "Unit tests"
+        working-directory: artifacts/api-server
+        run: python -m pytest tests/unit/ -v --tb=short --no-header -p no:cacheprovider
+
+      - name: "DDT tests"
+        working-directory: artifacts/api-server
+        run: python -m pytest tests/ddt/ -v --tb=short --no-header -p no:cacheprovider
+
+      - name: "BDD tests"
+        working-directory: artifacts/api-server
+        run: python -m pytest tests/bdd/ -v --tb=short --no-header -p no:cacheprovider
+
+      - name: "Regression tests"
+        working-directory: artifacts/api-server
+        run: python -m pytest tests/regression/ -v --tb=short --no-header -p no:cacheprovider
+
+      - name: "E2E tests"
+        working-directory: artifacts/api-server
+        run: python -m pytest tests/e2e/ -v --tb=short --no-header -p no:cacheprovider
+
+      - name: "Coverage (all suites)"
+        working-directory: artifacts/api-server
+        run: |
+          python -m pytest tests/ \
+            --cov=src \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --no-header -q -p no:cacheprovider
+        continue-on-error: true
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          file: artifacts/api-server/coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  # --------------------------------------------------------------------------
+  # TypeScript SPA build
+  # --------------------------------------------------------------------------
+  build-ts:
+    name: "🏗️ Build TypeScript SPA (Vite)"
+    runs-on: ubuntu-24.04
+    needs: [typecheck-ts]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build platform SPA
         run: pnpm --filter @workspace/platform run build
         env:
-          PORT: "23633"
-          BASE_PATH: "/"
+          NODE_ENV: production
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder' }}
 
-      - name: Upload build artifacts
+      - name: Upload SPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ github.sha }}
-          path: |
-            artifacts/api-server/dist/
-            artifacts/platform/dist/
+          name: platform-dist-${{ github.sha }}
+          path: artifacts/platform/dist/
           retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # Docker dev image build
+  # --------------------------------------------------------------------------
+  docker-dev:
+    name: "🐳 Docker Dev Build"
+    runs-on: ubuntu-24.04
+    needs: [test-py]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dev image (smoke test)
+        run: |
+          docker build \
+            --file docker/dev/Dockerfile \
+            --tag synaptiq-api:dev-${{ github.sha }} \
+            --label "git.sha=${{ github.sha }}" \
+            --label "git.branch=${{ github.ref_name }}" \
+            .
+
+  # --------------------------------------------------------------------------
+  # Docker prod image build
+  # --------------------------------------------------------------------------
+  docker-prod:
+    name: "🐳 Docker Prod Build"
+    runs-on: ubuntu-24.04
+    needs: [test-py, build-ts]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build prod API image (smoke test)
+        run: |
+          docker build \
+            --file docker/prod/Dockerfile \
+            --target api \
+            --tag synaptiq-api:prod-${{ github.sha }} \
+            --label "git.sha=${{ github.sha }}" \
+            .

@@ -1,0 +1,60 @@
+# =============================================================================
+# Synaptiq — Synaptic Applications
+# Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
+# =============================================================================
+
+[project]
+name = "synaptiq-api"
+version = "2.0.0"
+description = "Synaptiq FastAPI backend — AI-native knowledge graph, agent pipeline, and analytics platform"
+authors = [{ name = "Synaptic Applications", email = "itkdaniel@users.noreply.github.com" }]
+license = { text = "MIT" }
+requires-python = ">=3.12"
+readme = "README.md"
+
+dependencies = [
+    "fastapi>=0.115.6",
+    "uvicorn[standard]>=0.32.1",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "pydantic>=2.10.4",
+    "pydantic-settings>=2.7.0",
+    "PyJWT>=2.10.1",
+    "cryptography>=44.0.0",
+    "httpx>=0.28.1",
+    "structlog>=24.4.0",
+    "orjson>=3.10.12",
+    "python-multipart>=0.0.20",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "factory-boy>=3.3.1",
+    "Faker>=33.1.0",
+    "ruff>=0.8.4",
+    "mypy>=1.13.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--tb=short -q --cov=src --cov-report=term-missing"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "alembic/*"]

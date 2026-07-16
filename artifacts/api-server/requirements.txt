@@ -1,0 +1,33 @@
+# =============================================================================
+# Synaptiq — Synaptic Applications
+# Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
+#
+# Production dependencies for the Python 3 FastAPI backend.
+# =============================================================================
+
+# --- Web framework -----------------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+
+# --- Database ----------------------------------------------------------------
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+greenlet==3.1.1
+
+# --- Validation & Settings ---------------------------------------------------
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# --- Auth (Clerk JWT verification) -------------------------------------------
+PyJWT==2.10.1
+cryptography==44.0.0
+httpx==0.28.1
+
+# --- Logging -----------------------------------------------------------------
+structlog==24.4.0
+
+# --- Utilities ---------------------------------------------------------------
+python-dateutil==2.9.0.post0
+orjson==3.10.12

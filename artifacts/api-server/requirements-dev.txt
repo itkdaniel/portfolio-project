@@ -1,0 +1,32 @@
+# =============================================================================
+# Synaptiq — Synaptic Applications
+# Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
+#
+# Development & test dependencies (superset of requirements.txt).
+# =============================================================================
+
+-r requirements.txt
+
+# --- Testing framework -------------------------------------------------------
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+anyio==4.7.0
+
+# --- In-memory SQLite for tests (asyncpg cannot use SQLite) ------------------
+aiosqlite==0.20.0
+
+# --- Factory pattern test data -----------------------------------------------
+factory-boy==3.3.1
+Faker==33.1.0
+
+# --- HTTP test client (also used in scraper and tests) -----------------------
+httpx==0.28.1
+
+# --- Code quality ------------------------------------------------------------
+ruff==0.8.4
+mypy==1.13.0
+types-python-dateutil==2.9.0.20241206
+
+# --- Dev utilities -----------------------------------------------------------
+watchfiles==1.0.3

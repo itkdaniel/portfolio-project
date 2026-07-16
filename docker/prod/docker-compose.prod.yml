@@ -1,0 +1,98 @@
+# =============================================================================
+# Synaptiq — Synaptic Applications
+# Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
+#
+# docker/prod/docker-compose.prod.yml
+# Production stack:
+#   - postgres (managed separately in cloud; this is for self-hosted deployments)
+#   - api (Python FastAPI, 4 uvicorn workers)
+#   - web (Nginx serving Vite SPA + reverse-proxying /api)
+# =============================================================================
+
+name: synaptiq-prod
+
+services:
+
+  # --------------------------------------------------------------------------
+  # PostgreSQL 16 — only needed for self-hosted production
+  # When deploying to cloud (Replit, Railway, etc.) use their managed DB.
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - .env.prod              # docker/prod/.env.prod (gitignored)
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-synaptiq}
+      POSTGRES_DB: ${POSTGRES_DB:-synaptiq_prod}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-synaptiq} -d ${POSTGRES_DB:-synaptiq_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: always
+    networks:
+      - internal
+
+  # --------------------------------------------------------------------------
+  # API — Python FastAPI (production, 4 workers)
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: ../..
+      dockerfile: docker/prod/Dockerfile
+      target: api
+    env_file:
+      - .env.prod
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: always
+    networks:
+      - internal
+      - external
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # --------------------------------------------------------------------------
+  # Web — Nginx + Vite SPA (reverse-proxies /api to api service)
+  # --------------------------------------------------------------------------
+  web:
+    build:
+      context: ../..
+      dockerfile: docker/prod/Dockerfile
+      target: frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - api
+    restart: always
+    networks:
+      - external
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  postgres_prod_data:
+
+networks:
+  internal:
+    driver: bridge
+  external:
+    driver: bridge

@@ -1,260 +1,339 @@
-# Synaptiq — Architecture
+# Synaptiq — Architecture (v2.0.0 Python FastAPI Backend)
 
-> Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
+> **Synaptic Applications** — AI-native knowledge graph, agent pipeline, and analytics platform.
+> Copyright © 2026 Synaptic Applications (Itkdaniel). MIT License.
+>
+> **v2.0.0** migrates the backend from TypeScript/Express → **Python 3.12 / FastAPI**
+> while keeping the TypeScript React frontend and OpenAPI contract unchanged.
 
-## System Overview
+---
+
+## 1. System Overview
 
 ```mermaid
 graph TB
-    subgraph Client["Browser Client (React + Vite)"]
-        UI[Pages / Components]
-        RQ[React Query hooks]
-        Clerk_FE[Clerk SDK - Auth]
+    subgraph Client ["Browser Client"]
+        FE["TypeScript React SPA<br/>(Vite 6 + Wouter + shadcn/ui)"]
     end
 
-    subgraph Proxy["Replit Reverse Proxy (path routing)"]
-        PR["/  → platform:23633"]
-        PA["/api → api-server:5000"]
-        PK["/clerk → Clerk JWKS proxy"]
+    subgraph Platform ["Replit Platform / Cloud"]
+        PROXY["Reverse Proxy (path-based)"]
+        API["Python FastAPI<br/>uvicorn ASGI — port 8080"]
+        DB["PostgreSQL 16<br/>(SQLAlchemy 2.0 + asyncpg)"]
+        STORE["Object Storage (Replit Buckets)"]
+        CLERK["Clerk Auth (JWKS / RS256)"]
     end
 
-    subgraph API["API Server (Express 5 + Node 24)"]
-        MW_Auth[Clerk middleware - JWT verify]
-        MW_RBAC[RBAC middleware - admin/user]
-        R_Health[/api/healthz]
-        R_Users[/api/users]
-        R_Profile[/api/profile]
-        R_Agent[/api/agent]
-        R_Tests[/api/tests]
-        R_KG[/api/knowledge-graph]
-        R_Storage[/api/storage]
+    subgraph External ["External APIs"]
+        HN["Hacker News Firebase API"]
+        CG["CoinGecko Markets API"]
+        CP["CryptoPanic News API"]
     end
 
-    subgraph DB["PostgreSQL (Drizzle ORM)"]
-        T_Users[(users)]
-        T_Profiles[(profiles)]
-        T_DataSources[(data_sources)]
-        T_ScrapeJobs[(scrape_jobs)]
-        T_FeatureSets[(feature_sets)]
-        T_TrainingRuns[(training_runs)]
-        T_TestRuns[(test_runs)]
-    end
-
-    subgraph Pipeline["Agent Pipeline (lib/agent-pipeline)"]
-        Scraper[Scraper - HN / NewsAPI / CoinGecko]
-        Processor[Feature Processor - CSV]
-        Trainer[Trainer - trend model]
-    end
-
-    subgraph Storage["Object Storage (Replit)"]
-        OS[Bucket - raw / features / models]
-    end
-
-    UI --> RQ --> Proxy
-    Proxy --> API
-    Proxy --> Client
-    MW_Auth --> MW_RBAC --> R_Users & R_Profile & R_Agent & R_Tests & R_KG
-    R_Agent --> Pipeline --> OS
-    R_Agent & R_Users & R_Profile & R_Tests & R_KG --> DB
+    FE -->|HTTPS| PROXY
+    PROXY -->|"/api/*"| API
+    PROXY -->|"/"| FE
+    API -->|asyncpg| DB
+    API -->|httpx| STORE
+    API -->|JWKS fetch cached 5 min| CLERK
+    API -->|httpx async| HN & CG & CP
 ```
 
-## Service Ports
+---
 
-| Service        | Port  | Path  | Description                      |
-|---------------|-------|-------|----------------------------------|
-| api-server    | 5000  | /api  | Express REST API + Clerk proxy   |
-| platform      | 23633 | /     | React SPA (Vite dev server)      |
+## 2. Python Backend — FastAPI Application Structure
 
-## Package Layout
+```mermaid
+graph LR
+    subgraph FastAPI ["artifacts/api-server/src/"]
+        MAIN["main.py — App factory + lifespan"]
+        CFG["config.py — Pydantic BaseSettings"]
+        DB2["database.py — Async engine + session"]
+        MW["middleware/auth.py — Clerk JWKS JWT"]
 
+        subgraph Routers ["routers/"]
+            R1["health · users · profile"]
+            R2["agent · tests · knowledge-graph · storage"]
+        end
+
+        subgraph Services ["services/ (Factory pattern)"]
+            S1["UserService · ProfileService"]
+            S2["AgentService · TestService · GraphService"]
+            SB["BaseService[ModelT]"]
+        end
+
+        subgraph Schemas ["schemas/ (Pydantic v2)"]
+            SC["common · user · profile"]
+            SC2["agent · tests · knowledge_graph"]
+        end
+
+        subgraph Models ["models/ (SQLAlchemy 2.0)"]
+            M["User · Profile · DataSource"]
+            M2["ScrapeJob · FeatureSet · TrainingRun · TestRun"]
+        end
+
+        subgraph Agent ["agent/"]
+            AG["scrape.py · process.py · train.py"]
+            AG2["csv_utils.py · data_sources.py"]
+        end
+    end
+
+    MAIN --> Routers
+    MAIN --> MW
+    Routers --> Services
+    Services --> Models
+    Services --> Agent
+    Routers --> Schemas
+    Services --> DB2
+    CFG --> DB2
+    CFG --> MW
+    S1 & S2 --> SB
 ```
-artifacts-monorepo/
-├── artifacts/
-│   ├── api-server/      # Express 5 backend (TypeScript, esbuild → CJS)
-│   └── platform/        # React 18 + Vite SPA
-├── lib/
-│   ├── agent-pipeline/  # Scrape / process / train logic (TypeScript)
-│   ├── api-client-react/# Generated React Query hooks (Orval)
-│   ├── api-spec/        # OpenAPI 3.1 spec + Orval codegen config
-│   ├── api-zod/         # Generated Zod schemas (Orval)
-│   ├── db/              # Drizzle ORM schema + client
-│   └── object-storage-web/ # Replit object storage client
-├── scripts/             # CLI tools (agentCli.ts)
-├── utils/               # Shell / PowerShell dev utilities
-├── docker/              # Docker Compose + Nginx config
-├── docs/                # Architecture, schema, API docs
-└── .github/workflows/   # CI/CD (ci.yml, deploy-production.yml, codeql.yml)
-```
 
-## Data Flow — Agent Pipeline
+---
+
+## 3. Agent Pipeline — Scrape → Process → Train
 
 ```mermaid
 sequenceDiagram
-    actor User
-    participant API as API Server
-    participant Pipeline as Agent Pipeline
-    participant Storage as Object Storage
+    participant U as User (Browser)
+    participant A as FastAPI
+    participant S as AgentService
+    participant Sc as scrape.py
     participant DB as PostgreSQL
 
-    User->>API: POST /api/agent/scrape {source, path}
-    API->>DB: Insert scrape_job (status=pending)
-    API->>Pipeline: scrapeDataSource(source)
-    Pipeline-->>API: ScrapedRecords[]
-    API->>Storage: Upload raw NDJSON
-    API->>DB: Update scrape_job (status=complete, recordCount)
-    API-->>User: ScrapeJob {id, status, recordCount}
+    U->>A: POST /api/agent/scrape {source}
+    A->>S: run_scrape(source, path, user)
+    S->>DB: INSERT scrape_job (status=running)
+    S->>Sc: scrape_data_source(source_name) [async httpx]
+    Sc-->>S: list[dict] records
+    S->>DB: UPDATE scrape_job (status=complete, record_count=N)
+    A-->>U: ScrapeJobOut JSON
 
-    User->>API: POST /api/agent/process {scrapeJobId, features}
-    API->>Storage: Download raw file
-    API->>Pipeline: processRecords(records, featureNames)
-    Pipeline-->>API: FeatureRow[] (CSV)
-    API->>Storage: Upload feature CSV
-    API->>DB: Insert feature_set
-    API-->>User: FeatureSet {id, path, rowCount}
+    U->>A: POST /api/agent/process {scrape_job_id, feature_names}
+    A->>S: run_process(job_id, features, user)
+    S->>DB: INSERT feature_set (row_count=N)
+    A-->>U: FeatureSetOut JSON
 
-    User->>API: POST /api/agent/train {featureSetId}
-    API->>Storage: Download feature CSV
-    API->>Pipeline: trainOnFeatureRows(rows)
-    Pipeline-->>API: TrainingRunMetrics
-    API->>DB: Insert training_run
-    API-->>User: TrainingRun {id, metrics}
+    U->>A: POST /api/agent/train {feature_set_id}
+    A->>S: run_train(feature_set_id, user)
+    S->>DB: INSERT training_run (status=running)
+    Note over S: train.py: lightweight stats model
+    S->>DB: UPDATE training_run (metrics, status=complete)
+    A-->>U: TrainingRunOut JSON
 ```
 
-## Authentication & RBAC
+---
+
+## 4. Auth & RBAC — Clerk JWT (PyJWT + JWKS)
 
 ```mermaid
-flowchart LR
-    A[Request] --> B{Has Bearer JWT?}
-    B -- No --> C[401 Unauthorized]
-    B -- Yes --> D[Clerk verifyToken]
-    D -- Invalid --> C
-    D -- Valid --> E[resolveLocalUser]
-    E -- New user --> F[INSERT users - role=user]
-    E -- First user ever --> G[INSERT users - role=admin]
-    E --> H{Route requires admin?}
-    H -- No --> I[Handler]
-    H -- Yes --> J{role === admin?}
-    J -- No --> K[403 Forbidden]
-    J -- Yes --> I
+sequenceDiagram
+    participant B as Browser
+    participant C as Clerk
+    participant A as FastAPI (middleware/auth.py)
+    participant US as UserService
+    participant DB as PostgreSQL
+
+    B->>C: Sign in (OIDC)
+    C-->>B: RS256 JWT (kid=xxx)
+    B->>A: GET /api/users/me  Authorization: Bearer <JWT>
+    A->>A: HTTPBearer extracts token
+    A->>C: GET /.well-known/jwks.json (cached 5 min TTL)
+    C-->>A: JWKS public keys
+    A->>A: PyJWT.decode(token, key[kid], RS256)
+    A->>US: resolve_local_user(ClerkUser)
+    US->>DB: SELECT WHERE clerk_user_id=?
+    alt First user ever
+        US->>DB: SELECT COUNT(*) → 0
+        US->>DB: INSERT user (role=admin)
+    else Existing user
+        US-->>A: User ORM instance
+    end
+    A-->>B: UserOut JSON (200)
 ```
 
-## Knowledge Graph Schema
+---
 
-```mermaid
-erDiagram
-    KNOWLEDGE_GRAPH_NODE {
-        string id
-        string label
-        string entityType
-        json   detail
-    }
-    KNOWLEDGE_GRAPH_EDGE {
-        string source
-        string target
-        string relation
-    }
-    KNOWLEDGE_GRAPH_NODE ||--o{ KNOWLEDGE_GRAPH_EDGE : "source"
-    KNOWLEDGE_GRAPH_NODE ||--o{ KNOWLEDGE_GRAPH_EDGE : "target"
-```
-
-## Database Schema
+## 5. Database Schema (SQLAlchemy 2.0 / PostgreSQL 16)
 
 ```mermaid
 erDiagram
-    USERS {
-        serial  id PK
-        text    clerk_user_id UK
-        text    email
-        text    first_name
-        text    last_name
-        text    image_url
-        enum    role
-        ts      created_at
+    users {
+        int id PK
+        string clerk_user_id UK
+        string email
+        string first_name
+        string last_name
+        string image_url
+        enum role "admin|user"
+        timestamp created_at
     }
-    PROFILES {
-        serial  id PK
-        int     user_id FK
-        text    display_name
-        text    title
-        text    bio
-        text    avatar_url
-        text    github_url
-        text    linkedin_url
-        text    skills
-        text    projects
-        ts      updated_at
+    profiles {
+        int id PK
+        int user_id FK
+        string display_name
+        string title
+        text bio
+        string avatar_url
+        string github_url
+        string linkedin_url
+        text skills
+        text projects
+        bool is_public
+        timestamp updated_at
     }
-    DATA_SOURCES {
-        serial  id PK
-        text    name UK
-        text    category
-        text    url
-        text    description
-        bool    active
-        ts      created_at
+    data_sources {
+        int id PK
+        string name UK
+        enum category "tech|news|crypto|stocks|sports"
+        string url
+        text description
+        bool active
+        timestamp created_at
     }
-    SCRAPE_JOBS {
-        serial  id PK
-        int     data_source_id FK
-        int     user_id FK
-        enum    status
-        int     record_count
-        text    storage_path
-        text    error
-        ts      created_at
-        ts      completed_at
+    scrape_jobs {
+        int id PK
+        int data_source_id FK
+        int user_id FK
+        enum status "pending|running|complete|failed"
+        int record_count
+        string storage_path
+        text error
+        timestamp created_at
+        timestamp completed_at
     }
-    FEATURE_SETS {
-        serial  id PK
-        int     scrape_job_id FK
-        int     user_id FK
-        text    feature_names
-        int     row_count
-        text    storage_path
-        ts      created_at
+    feature_sets {
+        int id PK
+        int scrape_job_id FK
+        int user_id FK
+        string feature_names
+        int row_count
+        string storage_path
+        timestamp created_at
     }
-    TRAINING_RUNS {
-        serial  id PK
-        int     feature_set_id FK
-        int     user_id FK
-        enum    status
-        json    metrics
-        ts      created_at
-        ts      completed_at
+    training_runs {
+        int id PK
+        int feature_set_id FK
+        int user_id FK
+        enum status "pending|running|complete|failed"
+        json metrics
+        timestamp created_at
+        timestamp completed_at
     }
-    TEST_RUNS {
-        serial  id PK
-        int     user_id FK
-        enum    suite_type
-        int     total
-        int     passed
-        int     failed
-        int     skipped
-        int     duration_ms
-        ts      ran_at
+    test_runs {
+        int id PK
+        int user_id FK
+        enum suite_type "unit|ddt|bdd|regression|e2e"
+        int total
+        int passed
+        int failed
+        int skipped
+        int duration_ms
+        timestamp ran_at
     }
 
-    USERS ||--o{ PROFILES : "has"
-    USERS ||--o{ SCRAPE_JOBS : "runs"
-    USERS ||--o{ FEATURE_SETS : "creates"
-    USERS ||--o{ TRAINING_RUNS : "owns"
-    USERS ||--o{ TEST_RUNS : "triggers"
-    DATA_SOURCES ||--o{ SCRAPE_JOBS : "feeds"
-    SCRAPE_JOBS ||--o{ FEATURE_SETS : "processed into"
-    FEATURE_SETS ||--o{ TRAINING_RUNS : "trains"
+    users ||--o| profiles : "has"
+    users ||--o{ scrape_jobs : "runs"
+    users ||--o{ feature_sets : "owns"
+    users ||--o{ training_runs : "triggers"
+    users ||--o{ test_runs : "executes"
+    data_sources ||--o{ scrape_jobs : "scraped_by"
+    scrape_jobs ||--o{ feature_sets : "processed_into"
+    feature_sets ||--o{ training_runs : "trained_on"
 ```
 
-## Security Protocols
+---
 
-| Layer                  | Control                                                       |
-|------------------------|---------------------------------------------------------------|
-| Auth                   | Clerk-issued JWTs, verified server-side on every request      |
-| Transport              | HTTPS enforced (Replit proxy + Nginx TLS in production)       |
-| RBAC                   | `requireAuth` + `requireAdmin` Express middleware             |
-| Supply-chain           | `minimumReleaseAge: 1440` in pnpm-workspace.yaml             |
-| SAST                   | GitHub CodeQL on push / weekly schedule                       |
-| Secrets                | Never in source — loaded via Replit Secrets or `.env.local`   |
-| DB access              | Server-only via Drizzle; no direct DB exposure to browser     |
-| CORS                   | `credentials: true, origin: true` (same-domain proxy)        |
-| HTTP headers           | Nginx: X-Frame-Options, X-Content-Type-Options, CSP           |
-| Docker                 | Non-root user (`synaptiq`), health checks, minimal Alpine base|
+## 6. Testing — Page Object Model + Factory Boy
+
+```mermaid
+graph TB
+    subgraph Suites ["5 Pytest Test Suites (tests/)"]
+        UNIT["unit/ — Pure function tests (no I/O)"]
+        DDT["ddt/ — @pytest.mark.parametrize data-driven"]
+        BDD["bdd/ — Given/When/Then behaviour tests"]
+        REG["regression/ — Historical bug guard tests"]
+        E2E["e2e/ — Full HTTP request/response cycle"]
+    end
+
+    subgraph POM ["Page Object Model (tests/page_objects/)"]
+        BP["BasePage — get/post/put/patch + assert helpers"]
+        HP["HealthPage"] & UP["UsersPage"] & AP["AgentPage"] & GP["GraphPage"]
+        BP --> HP & UP & AP & GP
+    end
+
+    subgraph FB ["Factory Boy (tests/factories/)"]
+        UF["UserFactory · AdminUserFactory"]
+        AF["DataSourceFactory · ScrapeJobFactory"]
+        AF2["FeatureSetFactory · TrainingRunFactory · TestRunFactory"]
+    end
+
+    subgraph FX ["conftest.py Fixtures"]
+        ENG["engine — session-scope SQLite+aiosqlite"]
+        DBS["db_session — function-scope, rolled back"]
+        AC["auth_client — mocked Clerk user"]
+        ANC["anon_client — no auth"]
+    end
+
+    BDD & E2E --> POM
+    UNIT & DDT & REG --> FB
+    BDD & E2E --> FX
+```
+
+---
+
+## 7. Docker — Dev vs Production
+
+| | Dev (`docker/dev/`) | Prod (`docker/prod/`) |
+|---|---|---|
+| **Dockerfile** | `docker/dev/Dockerfile` | `docker/prod/Dockerfile` (multi-stage) |
+| **Compose** | `docker-compose.dev.yml` | `docker-compose.prod.yml` |
+| **API mode** | `uvicorn --reload --log-level debug` | `uvicorn --workers 4 --log-level info` |
+| **Frontend** | Vite dev server (HMR on port 3000) | Nginx serving pre-built `/dist` |
+| **Database** | Local PG container | Managed cloud DB / self-hosted PG |
+| **Source** | Volume-mounted (hot reload) | COPY into image at build time |
+| **Security** | Open CORS, debug=true | Tightened CSP, debug=false |
+| **Python stage** | Single stage (includes dev deps) | Multi-stage: builder venv → slim runtime |
+
+---
+
+## 8. CI/CD Pipeline
+
+```
+push to main / typescript-backend
+    │
+    ├── lint-py (ruff) ─────────────────────────────────────────────► ✅
+    ├── typecheck-ts (tsc --noEmit) ────────────────────────────────► ✅
+    │
+    ├── test-py ← needs lint-py ────────────────────────────────────► ✅
+    │       ├── unit tests
+    │       ├── DDT tests
+    │       ├── BDD tests
+    │       ├── regression tests
+    │       └── E2E tests + coverage → Codecov
+    │
+    ├── build-ts ← needs typecheck-ts ──────────────────────────────► ✅
+    │       └── uploads platform/dist artifact
+    │
+    ├── docker-dev ← needs test-py ─────────────────────────────────► ✅
+    └── docker-prod ← needs test-py + build-ts ─────────────────────► ✅
+```
+
+---
+
+## Key Architecture Decisions
+
+| Decision | Rationale |
+|---|---|
+| **FastAPI over Flask/Django** | Native async/await, Pydantic v2 auto-validation, auto OpenAPI docs, fastest Python ASGI |
+| **SQLAlchemy 2.0 async + asyncpg** | True async I/O, no greenlet thread pool, best PostgreSQL performance |
+| **Alembic migrations** | Explicit versioned migration history; replaces Drizzle `push` (no migration files) |
+| **Factory pattern (BaseService)** | All services extend `BaseService[ModelT]`; factory classmethods centralise record creation |
+| **Factory Boy for tests** | Declarative, composable, Faker-backed; mirrors the TypeScript factory test pattern |
+| **Page Object Model** | HTTP interactions encapsulated per router; tests read as business-language assertions |
+| **SQLite + aiosqlite in tests** | In-memory isolation, rolled back per function; no live DB required in CI |
+| **First user = admin** | Count users BEFORE insert; prevents race-condition role promotion bug |
+| **PyJWT + JWKS cache (5 min)** | Avoids per-request Clerk roundtrip; refreshes for key rotation |
+| **OpenAPI contract preserved** | Same spec → TypeScript React Query hooks work without any frontend changes |
+| **Separate dev/prod Docker** | Different base images, volumes, security posture; no prod debug tools in images |
