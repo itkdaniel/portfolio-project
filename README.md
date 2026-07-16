@@ -5,8 +5,15 @@
 [![CI](https://github.com/Itkdaniel/portfolio-project/actions/workflows/ci.yml/badge.svg)](https://github.com/Itkdaniel/portfolio-project/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/Itkdaniel/portfolio-project/actions/workflows/codeql.yml/badge.svg)](https://github.com/Itkdaniel/portfolio-project/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-blue?logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6-009688?logo=fastapi)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript)
 
 Synaptiq is a full-stack intelligence platform that scrapes live trending-topic data (tech, news, crypto, stocks, sports), processes and trains lightweight AI models on it, visualizes its own relational data as a live force-directed knowledge graph, manages a team portfolio/resume directory, and surfaces a color-coded test-suite dashboard — all behind Clerk authentication and role-based access control.
+
+> **v2.0.0 — Python 3 FastAPI backend** (migrated from TypeScript/Express)  
+> The TypeScript React frontend is unchanged. The OpenAPI 3.1 contract is preserved.  
+> Original TypeScript backend preserved on the [`typescript-backend`](https://github.com/Itkdaniel/portfolio-project/tree/typescript-backend) branch.
 
 ---
 
@@ -22,142 +29,151 @@ Synaptiq is a full-stack intelligence platform that scrapes live trending-topic 
   - [Local Development (Self-hosted)](#local-development-self-hosted)
   - [Docker Compose](#docker-compose)
 - [Environment Variables](#environment-variables)
-  - [Development](#development)
-  - [Production](#production)
 - [CI/CD Pipelines](#cicd-pipelines)
-  - [CI — Typecheck, Lint & Test](#ci--typecheck-lint--test)
-  - [CD — Production Deploy](#cd--production-deploy)
-  - [Security Scan — CodeQL](#security-scan--codeql)
-  - [Required GitHub Secrets](#required-github-secrets)
 - [Database Migrations](#database-migrations)
 - [API Reference](#api-reference)
 - [Testing](#testing)
-- [Utility Scripts](#utility-scripts)
 - [Docker & Container Builds](#docker--container-builds)
 - [Deployment Methods](#deployment-methods)
-  - [Replit Deployments (primary)](#replit-deployments-primary)
-  - [Docker / Railway / Fly.io](#docker--railway--flyio)
-  - [Static Frontend (Vercel / Netlify)](#static-frontend-vercel--netlify)
 - [Security Protocols](#security-protocols)
 - [Release History](#release-history)
 - [License](#license)
-- [Copyright](#copyright)
 
 ---
 
 ## Features
 
 | Feature | Description |
-|---------|-------------|
-| **Auth & RBAC** | Clerk-powered sign-in/sign-up; first-ever user auto-promoted to admin |
-| **Dashboard** | Live overview of pipeline activity, data sources, and team directory |
-| **Agent Pipeline** | Scrape → Process → Train on real public data (Hacker News, NewsAPI, CoinGecko) |
-| **Knowledge Graph** | Canvas-based force-directed live graph of the platform's own relational data |
-| **Team Profiles** | Resume/portfolio pages per user; public and private views |
-| **Test Dashboard** | Color-coded progress bars per suite category (unit/DDT/BDD/regression/E2E) |
-| **Admin Panel** | Role management, user list, admin-gated actions |
-| **CLI Tool** | `pnpm --filter @workspace/scripts run agent -- --scrape=<src> --process=<id> --train=<id>` |
+|---|---|
+| **Auth / RBAC** | Clerk sign-in (JWT RS256), first user = admin, per-route role enforcement |
+| **AI Agent Pipeline** | Scrape (HN / CoinGecko / CryptoPanic) → Process → Train, with CLI support |
+| **Knowledge Graph** | Live force-directed canvas graph of the platform's own relational data |
+| **Team / Portfolio** | Resume pages per user, public and private views |
+| **Test Dashboard** | Color-coded progress bars across 5 pytest suites (85 tests) |
+| **Admin Panel** | User role management, admin-gated UI |
+| **Object Storage** | Replit bucket-backed file upload/download |
 
 ---
 
 ## Tech Stack
 
+### Backend (v2.0.0 — Python 3.12 FastAPI)
+
 | Layer | Technology |
-|-------|-----------|
-| Language | TypeScript 5.9, Go (future), Python (future) |
-| Runtime | Node.js 24 |
-| Frontend | React 18, Vite 6, Wouter, React Query (TanStack), shadcn/ui |
-| Backend | Express 5, Pino logger |
-| Auth | Clerk (JWT, OIDC) |
-| Database | PostgreSQL 16 + Drizzle ORM |
-| Validation | Zod v4, drizzle-zod |
-| API Codegen | Orval (OpenAPI 3.1 → React Query hooks + Zod schemas) |
-| Build | esbuild (API), Vite (SPA) |
-| Monorepo | pnpm workspaces |
-| Testing | Vitest (unit/DDT/BDD/regression/E2E) — Page Object Model + Factory pattern |
-| CI/CD | GitHub Actions |
-| Security | CodeQL, pnpm minimumReleaseAge, Nginx security headers, Clerk JWT |
-| Container | Docker multi-stage, Docker Compose, Nginx |
-| Storage | Replit Object Storage |
+|---|---|
+| Framework | FastAPI 0.115.6 (ASGI, native async) |
+| Server | uvicorn (dev: `--reload`, prod: `--workers 4`) |
+| Database | PostgreSQL 16 + SQLAlchemy 2.0 async + asyncpg |
+| Migrations | Alembic |
+| Validation | Pydantic v2 |
+| Auth | PyJWT + Clerk JWKS (RS256, 5-min cache) |
+| HTTP client | httpx (async scraper + test client) |
+| Logging | structlog |
+| Testing | pytest + pytest-asyncio + Factory Boy + aiosqlite |
+
+### Frontend (unchanged)
+
+| Layer | Technology |
+|---|---|
+| Framework | React 18, TypeScript 5.9 |
+| Bundler | Vite 6 |
+| Routing | Wouter |
+| Data fetching | React Query (generated hooks via Orval) |
+| UI | shadcn/ui, Tailwind CSS v4 |
+| Auth | Clerk React SDK |
+
+### Shared
+
+| Tool | Use |
+|---|---|
+| OpenAPI 3.1 | Contract-first API spec (`lib/api-spec/openapi.yaml`) |
+| Orval | Codegen — React Query hooks + Zod schemas from OpenAPI |
+| pnpm workspaces | Node.js 24 monorepo (frontend + shared libs) |
+| Docker | Multi-stage images, separate dev/prod compose files |
+| GitHub Actions | CI (lint + typecheck + test + build + Docker smoke) |
 
 ---
 
 ## Repository Structure
 
 ```
-synaptiq/                          # pnpm monorepo root
+portfolio-project/
 ├── artifacts/
-│   ├── api-server/                # Express 5 REST API (TypeScript → esbuild CJS)
-│   │   └── src/
-│   │       ├── app.ts             # Express app factory
-│   │       ├── routes/            # Route handlers per domain
-│   │       ├── middlewares/       # Auth (Clerk), RBAC, Clerk proxy
-│   │       ├── lib/               # Logger, ObjectStorage
-│   │       └── tests/             # Vitest test suites (5 categories)
-│   └── platform/                  # React SPA (Vite)
+│   ├── api-server/              # Python FastAPI backend
+│   │   ├── src/
+│   │   │   ├── main.py          # App factory + lifespan
+│   │   │   ├── config.py        # Pydantic BaseSettings
+│   │   │   ├── database.py      # Async engine + session factory
+│   │   │   ├── middleware/      # Clerk JWT auth
+│   │   │   ├── models/          # SQLAlchemy ORM (7 models)
+│   │   │   ├── schemas/         # Pydantic v2 request/response schemas
+│   │   │   ├── routers/         # FastAPI routers (7 routers)
+│   │   │   ├── services/        # Factory pattern services (BaseService[T])
+│   │   │   └── agent/           # Scrape → Process → Train pipeline
+│   │   ├── tests/
+│   │   │   ├── conftest.py      # SQLite+aiosqlite fixtures, mocked Clerk
+│   │   │   ├── factories/       # Factory Boy (UserFactory, AgentFactory suite)
+│   │   │   ├── page_objects/    # Page Object Model (BasePage + 4 pages)
+│   │   │   ├── unit/            # Pure function tests
+│   │   │   ├── ddt/             # Parametrized data-driven tests
+│   │   │   ├── bdd/             # Given/When/Then behaviour tests
+│   │   │   ├── regression/      # Bug guard tests
+│   │   │   └── e2e/             # Full HTTP cycle tests
+│   │   ├── alembic/             # Database migrations
+│   │   ├── requirements.txt     # Production Python deps
+│   │   └── requirements-dev.txt # Dev + test Python deps
+│   └── platform/                # TypeScript React SPA (unchanged)
 │       └── src/
-│           ├── App.tsx            # Clerk provider + Wouter routing
-│           ├── pages/             # Dashboard, Pipeline, KnowledgeGraph, etc.
-│           ├── components/        # Layout, shared UI components
-│           └── hooks/             # Custom React hooks
-├── lib/
-│   ├── agent-pipeline/            # Scrape / process / train logic
-│   ├── api-client-react/          # Generated React Query hooks (Orval)
-│   ├── api-spec/                  # OpenAPI 3.1 spec (source of truth)
-│   ├── api-zod/                   # Generated Zod validation schemas
-│   ├── db/                        # Drizzle schema + db client
-│   └── object-storage-web/        # Replit object storage wrapper
-├── scripts/
-│   └── src/agentCli.ts            # CLI: --scrape / --process / --train
-├── utils/                         # Dev utility scripts (bash + PowerShell)
-│   ├── setup.sh                   # One-shot local setup (macOS/Linux)
-│   ├── setup.ps1                  # One-shot local setup (Windows)
-│   ├── db-migrate.sh              # Push Drizzle schema changes
-│   ├── run-tests.sh               # Run test suites
-│   └── codegen.sh                 # Regenerate API client from OpenAPI spec
+│           ├── pages/           # Dashboard, Graph, Team, Tests, Admin
+│           └── components/      # shadcn/ui + custom components
+├── lib/                         # Shared TypeScript libraries
+│   ├── api-spec/                # OpenAPI 3.1 spec (source of truth)
+│   ├── api-client-react/        # Generated React Query hooks
+│   ├── api-zod/                 # Generated Zod schemas
+│   ├── db/                      # Drizzle schema (reference only in v2)
+│   └── agent-pipeline/          # TypeScript agent utils (reference)
 ├── docker/
-│   ├── docker-compose.yml         # Local full-stack (Postgres + API + Nginx)
-│   └── nginx.conf                 # SPA routing + security headers
+│   ├── dev/                     # Docker Compose (hot-reload, Vite HMR)
+│   └── prod/                    # Docker Compose (multi-stage, Nginx)
 ├── docs/
-│   ├── architecture.md            # Mermaid system diagrams
-│   ├── api.md                     # API endpoint reference
-│   └── testing.md                 # Test strategy, POM, factory pattern
-├── .github/
-│   └── workflows/
-│       ├── ci.yml                 # CI: typecheck + test + build
-│       ├── deploy-production.yml  # CD: deploy on push to main
-│       └── codeql.yml             # Security: CodeQL SAST scan
-├── Dockerfile                     # Multi-stage Docker build (API + Nginx)
-├── .env.example                   # Environment variable template
-├── LICENSE                        # MIT License
-└── README.md                      # This file
+│   ├── architecture.md          # Mermaid diagrams, architecture decisions
+│   ├── api.md                   # API reference
+│   └── testing.md               # POM + Factory Boy guide
+├── .github/workflows/
+│   ├── ci.yml                   # Python lint + TS typecheck + tests + Docker
+│   ├── deploy-production.yml    # Replit production deploy
+│   └── codeql.yml               # GitHub CodeQL security scan
+└── utils/                       # Bash + PowerShell utility scripts
 ```
 
 ---
 
 ## Architecture
 
-See [`docs/architecture.md`](docs/architecture.md) for full Mermaid diagrams covering:
+See [`docs/architecture.md`](docs/architecture.md) for full Mermaid diagrams:
 
-- **System overview** — proxy routing, service boundaries
-- **Agent pipeline data flow** — scrape → process → train sequence diagram
-- **Auth & RBAC flow** — JWT verification, role resolution, first-admin promotion
-- **Database schema** — all tables and relations (ER diagram)
-- **Knowledge graph schema** — node/edge model
+- System overview (browser → proxy → FastAPI → PostgreSQL)
+- Python backend app structure (routers / services / models / agent)
+- Agent pipeline sequence (scrape → process → train)
+- Auth sequence (Clerk JWT → JWKS → JIT user creation)
+- Database ER diagram (7 entities)
+- Testing architecture (POM + Factory Boy)
+- Docker dev vs prod comparison
+- CI/CD pipeline
 
-### Quick overview
+### Key Architecture Decisions
 
-```mermaid
-graph LR
-    Browser -->|HTTPS| Proxy[Replit Proxy]
-    Proxy -->|/| Platform[React SPA :23633]
-    Proxy -->|/api| API[Express API :5000]
-    API --> Clerk[Clerk JWT verify]
-    API --> DB[(PostgreSQL)]
-    API --> Pipeline[Agent Pipeline]
-    Pipeline --> Storage[Object Storage]
-    Pipeline --> External[HN / NewsAPI / CoinGecko]
-```
+| Decision | Rationale |
+|---|---|
+| **FastAPI over Flask/Django** | Native async/await, Pydantic v2 auto-validation, auto OpenAPI docs, fastest Python ASGI |
+| **SQLAlchemy 2.0 async + asyncpg** | True async I/O; no greenlet thread pool |
+| **Alembic migrations** | Explicit versioned history; replaces Drizzle push |
+| **BaseService[ModelT] factory** | Generic repository base; all services extend it |
+| **Factory Boy + POM tests** | Declarative, composable test data; HTTP interactions encapsulated per router |
+| **SQLite + aiosqlite in tests** | In-memory isolation, rolled back per function; no live DB in CI |
+| **PyJWT + JWKS cache (5 min)** | Avoids per-request Clerk roundtrip; handles key rotation |
+| **OpenAPI contract preserved** | TypeScript React Query hooks work without frontend changes |
+| **First user = admin** | Count users BEFORE insert; prevents race-condition role promotion |
 
 ---
 
@@ -165,185 +181,165 @@ graph LR
 
 ### Prerequisites
 
-| Tool | Version | Install |
-|------|---------|---------|
-| Node.js | 24+ | [nodejs.org](https://nodejs.org) |
-| pnpm | 9+ | `npm i -g pnpm@9` |
-| PostgreSQL | 16+ | [postgresql.org](https://www.postgresql.org) or Docker |
-| Git | 2.40+ | [git-scm.com](https://git-scm.com) |
+| Tool | Version |
+|---|---|
+| Python | 3.12+ |
+| Node.js | 24+ |
+| pnpm | 10+ |
+| PostgreSQL | 16 (or Docker) |
 
 ### Local Development (Replit)
 
-Replit provisions all services automatically. The three workflows run in parallel:
+The API server workflow runs automatically via Replit:
 
-```
-artifacts/api-server: API Server      → pnpm --filter @workspace/api-server run dev
-artifacts/platform: web               → pnpm --filter @workspace/platform run dev
+```bash
+# API server starts automatically (uvicorn with hot reload)
+# Frontend starts automatically (Vite dev server)
+
+# Check API health
+curl https://<your-repl-domain>/api/healthz
 ```
 
-Required Replit Secrets (set via the Secrets panel):
+To run manually:
+```bash
+# Python backend
+cd artifacts/api-server
+pip install -r requirements-dev.txt
+uvicorn src.main:app --reload --port 8080 --host 0.0.0.0
 
-```
-DATABASE_URL
-SESSION_SECRET
-CLERK_SECRET_KEY
-CLERK_PUBLISHABLE_KEY
-VITE_CLERK_PUBLISHABLE_KEY
-DEFAULT_OBJECT_STORAGE_BUCKET_ID
-PRIVATE_OBJECT_DIR
-PUBLIC_OBJECT_SEARCH_PATHS
+# TypeScript frontend (unchanged)
+pnpm --filter @workspace/platform run dev
 ```
 
 ### Local Development (Self-hosted)
 
 ```bash
-# 1. Clone
+# Clone
 git clone https://github.com/Itkdaniel/portfolio-project.git
 cd portfolio-project
 
-# 2. One-shot setup (installs deps, creates .env.local)
-chmod +x utils/setup.sh && ./utils/setup.sh     # macOS / Linux
-# or on Windows PowerShell 7+:
-.\utils\setup.ps1
+# Python deps
+cd artifacts/api-server
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
 
-# 3. Fill in .env.local with real values (see Environment Variables below)
-cp .env.example .env.local
-nano .env.local
+# Apply DB schema
+alembic upgrade head
 
-# 4. Push DB schema (first run only)
-./utils/db-migrate.sh
+# Start backend
+uvicorn src.main:app --reload --port 8080
 
-# 5. Start API server (terminal 1)
-pnpm --filter @workspace/api-server run dev
-
-# 6. Start frontend (terminal 2)
+# Frontend (new terminal)
+cd ../..
+pnpm install --frozen-lockfile
 pnpm --filter @workspace/platform run dev
-
-# Open http://localhost:23633
 ```
 
 ### Docker Compose
 
-Full stack in one command (Postgres + API + Nginx frontend):
-
 ```bash
-# Build and start all services
-docker compose -f docker/docker-compose.yml up --build
+# Development (hot-reload, Vite HMR)
+docker compose -f docker/dev/docker-compose.dev.yml up
 
-# Stop
-docker compose -f docker/docker-compose.yml down
-
-# Open http://localhost:8080
-```
-
-Required env vars for Docker (set in shell before running):
-
-```bash
-export SESSION_SECRET=<64-char-hex>
-export CLERK_SECRET_KEY=sk_live_...
-export CLERK_PUBLISHABLE_KEY=pk_live_...
+# Production (4 workers, Nginx, built SPA)
+docker compose -f docker/prod/docker-compose.prod.yml up --build
 ```
 
 ---
 
 ## Environment Variables
 
-### Development
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `SESSION_SECRET` | ✅ | 64-char random hex (`openssl rand -hex 32`) |
-| `CLERK_SECRET_KEY` | ✅ | Clerk server-side secret key |
-| `CLERK_PUBLISHABLE_KEY` | ✅ | Clerk publishable key |
-| `VITE_CLERK_PUBLISHABLE_KEY` | ✅ | Clerk publishable key (browser bundle) |
-| `DEFAULT_OBJECT_STORAGE_BUCKET_ID` | ✅ | Replit object storage bucket ID |
-| `PRIVATE_OBJECT_DIR` | ⚪ | Sub-directory for private files (default: `private`) |
-| `PUBLIC_OBJECT_SEARCH_PATHS` | ⚪ | Comma-separated public paths (default: `public`) |
-| `PORT` | ⚪ | API server port (default: `5000`; set by Replit workflow) |
-
-### Production
-
-Same variables as development, plus these additional guards:
+### Backend (Python)
 
 | Variable | Description |
-|----------|-------------|
-| `NODE_ENV` | Must be `production` |
-| `DATABASE_URL` | Use a production-grade managed Postgres (Neon, Supabase, RDS) |
+|---|---|
+| `DATABASE_URL` | PostgreSQL async URL (`postgresql+asyncpg://...`) |
+| `CLERK_SECRET_KEY` | Clerk backend secret key |
+| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
+| `CLERK_JWKS_URL` | Clerk JWKS URL (auto-derived from publishable key if omitted) |
+| `SESSION_SECRET` | 64-char hex secret |
+| `ENVIRONMENT` | `development` \| `production` |
+| `DEFAULT_OBJECT_STORAGE_BUCKET_ID` | Replit object storage bucket |
+| `PRIVATE_OBJECT_DIR` | Private object storage prefix |
+| `PUBLIC_OBJECT_SEARCH_PATHS` | Public object search paths |
 
-Copy `.env.example` as your template. **Never commit `.env` files with real secrets.**
+### Frontend (TypeScript, unchanged)
+
+| Variable | Description |
+|---|---|
+| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key (Vite client) |
 
 ---
 
 ## CI/CD Pipelines
 
-### CI — Typecheck, Lint & Test
+### CI — `ci.yml`
 
-File: `.github/workflows/ci.yml`
-Triggers: push or PR to `main` / `dev`
-
-```
-install → typecheck → test → build (on main)
-```
-
-- `install`: pnpm install with frozen lockfile
-- `typecheck`: `pnpm run typecheck` (all workspace packages)
-- `test`: Vitest suites (unit/DDT/BDD/regression/E2E) — 21 tests, 5 categories
-- `build`: esbuild API bundle + Vite SPA, uploads dist artifacts
-
-### CD — Production Deploy
-
-File: `.github/workflows/deploy-production.yml`
-Triggers: push to `main` (after CI passes), or manual `workflow_dispatch`
+Triggered on push to `main` and `typescript-backend`, and on all pull requests.
 
 ```
-install → build → db-migrate → deploy
+push to main
+  ├── 🐍 lint-py          ruff check artifacts/api-server/src
+  ├── 📘 typecheck-ts      tsc --noEmit (frontend, unchanged)
+  │
+  ├── 🧪 test-py  ← needs lint-py
+  │       ├── unit tests        pytest tests/unit/
+  │       ├── DDT tests         pytest tests/ddt/
+  │       ├── BDD tests         pytest tests/bdd/
+  │       ├── regression tests  pytest tests/regression/
+  │       ├── E2E tests         pytest tests/e2e/
+  │       └── coverage → Codecov
+  │
+  ├── 🏗️ build-ts ← needs typecheck-ts
+  │       └── pnpm --filter @workspace/platform run build
+  │
+  ├── 🐳 docker-dev  ← needs test-py
+  └── 🐳 docker-prod ← needs test-py + build-ts
 ```
 
-Supports two deploy targets (uncomment the relevant block in the workflow):
+### CD — `deploy-production.yml`
 
-1. **Replit Deployments** — via `@replit/deploy-action`
-2. **Docker / GHCR** — build + push image, deploy to Railway/Fly.io/ECS
+Triggered on push to `main` after CI passes. Deploys to Replit production.
 
-### Security Scan — CodeQL
+### Security — `codeql.yml`
 
-File: `.github/workflows/codeql.yml`
-Triggers: push/PR to `main`/`dev`, weekly Sunday 03:00 UTC
-
-Runs GitHub CodeQL with `security-extended` + `security-and-quality` query suites on the TypeScript codebase.
+Weekly CodeQL scan on Python and TypeScript sources.
 
 ### Required GitHub Secrets
 
-Set these under **Settings → Secrets and variables → Actions → Repository secrets**:
-
-| Secret | Description |
-|--------|-------------|
-| `DATABASE_URL` | Production PostgreSQL connection string |
-| `SESSION_SECRET` | 64-char random hex |
-| `CLERK_SECRET_KEY` | Clerk secret key |
-| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key (Vite build) |
-| `DEFAULT_OBJECT_STORAGE_BUCKET_ID` | Object storage bucket |
-| `REPLIT_TOKEN` | (optional) For Replit deploy action |
+```
+DATABASE_URL
+CLERK_SECRET_KEY
+CLERK_PUBLISHABLE_KEY
+VITE_CLERK_PUBLISHABLE_KEY
+SESSION_SECRET
+DEFAULT_OBJECT_STORAGE_BUCKET_ID
+PRIVATE_OBJECT_DIR
+PUBLIC_OBJECT_SEARCH_PATHS
+REPLIT_TOKEN          (for production deploy workflow)
+```
 
 ---
 
 ## Database Migrations
 
-Synaptiq uses [Drizzle ORM](https://orm.drizzle.team) with a push-based workflow (no migration files — schema is source of truth).
-
 ```bash
-# Development push
-pnpm --filter @workspace/db run push
+cd artifacts/api-server
 
-# Or via helper script
-./utils/db-migrate.sh
+# Apply all migrations
+alembic upgrade head
 
-# Production push (with safety confirmation prompt)
-ENV=prod ./utils/db-migrate.sh
+# Create a new migration (after editing SQLAlchemy models)
+alembic revision --autogenerate -m "add_my_column"
+
+# Rollback one migration
+alembic downgrade -1
+
+# Show current migration state
+alembic current
 ```
 
-Schema source of truth: `lib/db/src/schema/`
+Migration files live in `artifacts/api-server/alembic/versions/`.
 
 ---
 
@@ -351,91 +347,78 @@ Schema source of truth: `lib/db/src/schema/`
 
 See [`docs/api.md`](docs/api.md) for full endpoint documentation.
 
-Full OpenAPI 3.1 spec: `lib/api-spec/openapi.yaml`
+Interactive Swagger UI available in development: `GET /api/docs`  
+ReDoc: `GET /api/redoc`
 
-To regenerate client hooks and Zod schemas after editing the spec:
+### Endpoints Overview
 
-```bash
-pnpm --filter @workspace/api-spec run codegen
-# or
-./utils/codegen.sh
-```
+| Router | Base Path | Auth Required |
+|---|---|---|
+| Health | `GET /api/healthz` | No |
+| Users | `/api/users/` | Yes (admin for list/role) |
+| Profile | `/api/profile/` | Yes (public endpoints open) |
+| Agent | `/api/agent/` | Yes |
+| Tests | `/api/tests/` | Yes (admin for run) |
+| Knowledge Graph | `/api/knowledge-graph/` | Yes |
+| Storage | `/api/storage/` | Yes |
 
 ---
 
 ## Testing
 
-See [`docs/testing.md`](docs/testing.md) for the full testing guide including the Page Object Model and factory pattern documentation.
+See [`docs/testing.md`](docs/testing.md) for the full testing guide.
 
 ```bash
-# Run all 5 suite categories (21 tests)
-pnpm --filter @workspace/api-server run test
+cd artifacts/api-server
 
-# Run via helper (with optional suite filter)
-./utils/run-tests.sh
-SUITE=bdd ./utils/run-tests.sh
+# All 5 suites (85 tests)
+python -m pytest tests/ -v
+
+# Individual suites
+python -m pytest tests/unit/ -v       # 25 pure function tests
+python -m pytest tests/ddt/ -v        # 22 parametrized tests
+python -m pytest tests/bdd/ -v        # 7 Given/When/Then tests
+python -m pytest tests/regression/ -v # 16 bug guard tests
+python -m pytest tests/e2e/ -v        # 15 full HTTP cycle tests
+
+# With coverage report
+python -m pytest tests/ --cov=src --cov-report=term-missing
 ```
 
-Test categories:
+**Patterns used:**
 
-| Suite | Focus |
-|-------|-------|
-| `unit` | Pure function / business logic |
-| `ddt` | Data-Driven Tests — multiple input sets |
-| `bdd` | Behaviour scenarios (Given / When / Then) |
-| `regression` | Previous bug reproducers |
-| `e2e` | Full HTTP stack against Express router |
-
----
-
-## Utility Scripts
-
-All scripts live in `utils/`. Make them executable with `chmod +x utils/*.sh`.
-
-| Script | Platform | Description |
-|--------|----------|-------------|
-| `utils/setup.sh` | macOS/Linux | One-shot dev environment setup |
-| `utils/setup.ps1` | Windows (PS7+) | One-shot dev environment setup |
-| `utils/db-migrate.sh` | macOS/Linux | Push Drizzle schema changes |
-| `utils/run-tests.sh` | macOS/Linux | Run Vitest suites |
-| `utils/codegen.sh` | macOS/Linux | Regenerate API client from OpenAPI spec |
-
-### CLI Agent
-
-```bash
-# Scrape a live data source (hacker-news, coin-gecko, crypto-panic)
-pnpm --filter @workspace/scripts run agent -- --scrape=hacker-news --path=./data/raw
-
-# Process scraped data into feature CSV
-pnpm --filter @workspace/scripts run agent -- --process=./data/raw/hacker-news-*.ndjson --features=title,score,category
-
-# Train on feature CSV
-pnpm --filter @workspace/scripts run agent -- --train=./data/features/features-*.csv
-```
+- **Page Object Model** — HTTP interactions encapsulated per router (`BasePage` → `HealthPage`, `UsersPage`, `AgentPage`, `GraphPage`)
+- **Factory Boy** — Declarative test data (`UserFactory`, `AdminUserFactory`, `DataSourceFactory`, `ScrapeJobFactory`, `FeatureSetFactory`, `TrainingRunFactory`, `TestRunFactory`)
+- **In-memory isolation** — SQLite + aiosqlite, rolled back per test function; no live DB required
 
 ---
 
 ## Docker & Container Builds
 
+Two separate Docker environments (dev vs prod):
+
+### Development
+
 ```bash
-# Build API server image
-docker build --target api-server -t synaptiq-api .
-
-# Build frontend (Nginx static) image
-docker build --target frontend -t synaptiq-web .
-
-# Run API server container
-docker run -p 5000:5000 \
-  -e DATABASE_URL=postgresql://... \
-  -e CLERK_SECRET_KEY=sk_live_... \
-  -e SESSION_SECRET=<hex> \
-  synaptiq-api
-
-# Run frontend container
-docker run -p 8080:80 synaptiq-web
+docker compose -f docker/dev/docker-compose.dev.yml up
+# API: uvicorn --reload on port 8080
+# Frontend: Vite HMR on port 3000
+# PostgreSQL: local container
+# Source: volume-mounted (hot reload)
 ```
 
-See `docker/docker-compose.yml` for the full local stack.
+### Production
+
+```bash
+docker compose -f docker/prod/docker-compose.prod.yml up --build
+# API: uvicorn --workers 4 on port 8080 (multi-stage Dockerfile)
+# Frontend: Nginx serving pre-built /dist
+# Source: COPY into image at build time
+```
+
+Multi-stage `docker/prod/Dockerfile`:
+- Stage 1 (`builder`): `python:3.12-slim` + pip install into `/opt/venv`
+- Stage 2 (`runtime`): `python:3.12-slim` + copy venv + non-root user
 
 ---
 
@@ -443,149 +426,59 @@ See `docker/docker-compose.yml` for the full local stack.
 
 ### Replit Deployments (primary)
 
-1. Push changes to `main`
-2. The CD workflow builds and deploys via `@replit/deploy-action`
-3. Replit handles TLS, health checks, and autoscaling
-4. Configure production secrets in Replit Secrets panel (NOT in `.env` files)
+Click **Publish** in the Replit workspace. The production deploy uses:
+- API: `uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 4 --log-level info`
+- Frontend: Vite-built static SPA served by the Replit proxy
 
 ### Docker / Railway / Fly.io
 
 ```bash
-# 1. Build and push image to GHCR
-docker build --target api-server -t ghcr.io/itkdaniel/portfolio-project:latest .
-docker push ghcr.io/itkdaniel/portfolio-project:latest
+# Build production API image
+docker build -f docker/prod/Dockerfile -t synaptiq-api:v2.0.0 artifacts/api-server/
 
-# 2. Deploy on Railway
-railway up
-
-# 3. Deploy on Fly.io
-fly deploy
+# Build and push
+docker build -f docker/prod/Dockerfile -t ghcr.io/itkdaniel/synaptiq-api:v2.0.0 .
+docker push ghcr.io/itkdaniel/synaptiq-api:v2.0.0
 ```
-
-Uncomment the Docker steps in `.github/workflows/deploy-production.yml` to
-automate image builds and pushes on every push to `main`.
 
 ### Static Frontend (Vercel / Netlify)
 
-The Vite SPA output (`artifacts/platform/dist/public`) can be deployed
-independently to any static host:
-
 ```bash
-# Build frontend
 pnpm --filter @workspace/platform run build
-
-# Deploy to Vercel
-npx vercel artifacts/platform/dist/public --prod
-
-# Deploy to Netlify
-npx netlify deploy --dir=artifacts/platform/dist/public --prod
+# Output: artifacts/platform/dist/
 ```
-
-> **Note**: When deploying the frontend separately, set `VITE_API_BASE_URL`
-> to point to your deployed API server URL.
 
 ---
 
 ## Security Protocols
 
-| Protocol | Implementation |
-|----------|----------------|
-| Authentication | Clerk JWTs — verified server-side on every protected request |
-| Authorization | `requireAuth` + `requireAdmin` Express middleware; RBAC enforced per route |
-| Transport security | HTTPS enforced (Replit proxy + Nginx TLS headers in production) |
-| Supply-chain protection | `minimumReleaseAge: 1440` in `pnpm-workspace.yaml` — packages must be 24h old before install |
-| SAST | GitHub CodeQL — runs on push, PR, and weekly |
-| Secret management | Replit Secrets (dev), GitHub Secrets (CI/CD) — never committed to source |
-| Database access | Server-only via Drizzle; PostgreSQL not exposed to browser or public network |
-| HTTP security headers | Nginx: X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, CSP, Referrer-Policy |
-| Container security | Non-root user (`synaptiq`), minimal Alpine base, HEALTHCHECK, no shell in prod image |
-| Dependency integrity | pnpm frozen lockfile in all CI steps (`--frozen-lockfile`) |
-| CORS | Credentials + same-origin policy via Replit reverse proxy |
+| Layer | Measure |
+|---|---|
+| Auth | Clerk RS256 JWT, JWKS-verified, 5-min cache |
+| RBAC | Per-route `require_role(["admin"])` dependency |
+| Input validation | Pydantic v2 strict mode on all request bodies |
+| SQL injection | SQLAlchemy parameterized queries only |
+| Secrets | Replit Secrets / environment variables (never in code) |
+| CORS | Origins restricted in production |
+| Headers | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` |
+| Dependencies | `pnpm minimumReleaseAge: 24h` (supply-chain defense) |
+| Scanning | GitHub CodeQL weekly on Python + TypeScript |
 
 ---
 
 ## Release History
 
-### v1.0.0 — 2026-07-12
-
-Initial release of Synaptiq (formerly Nexus Platform).
-
-**What's included:**
-
-- Full-stack monorepo (pnpm workspaces, TypeScript 5.9, Node.js 24)
-- Express 5 REST API with Clerk auth + RBAC
-- React 18 SPA: Dashboard, Pipeline, Knowledge Graph, Tests, Team, Profile, Admin
-- AI agent pipeline: scrape → process → train (Hacker News, CoinGecko, Crypto Panic)
-- Canvas-based force-directed knowledge graph viewer
-- 5-category Vitest test suite (21 tests: unit/DDT/BDD/regression/E2E)
-- GitHub Actions CI/CD (ci.yml, deploy-production.yml, codeql.yml)
-- Docker multi-stage build (API + Nginx frontend)
-- Docker Compose for local full-stack development
-- Utility scripts: setup, migrate, test, codegen (bash + PowerShell)
-- MIT License
-
-**Downloadable assets** (see [Releases](https://github.com/Itkdaniel/portfolio-project/releases/tag/v1.0.0)):
-
-| Asset | Platform | Description |
-|-------|----------|-------------|
-| `synaptiq-api-linux-amd64.tar.gz` | Linux x86_64 | API server bundle |
-| `synaptiq-api-linux-arm64.tar.gz` | Linux ARM64 | API server bundle |
-| `synaptiq-api-darwin-amd64.tar.gz` | macOS Intel | API server bundle |
-| `synaptiq-api-darwin-arm64.tar.gz` | macOS Apple Silicon | API server bundle |
-| `synaptiq-api-windows-amd64.zip` | Windows x86_64 | API server bundle |
-| `synaptiq-web.tar.gz` | Any | Static frontend (deploy to any web server) |
-| `docker-compose.yml` | Any | Docker Compose stack |
-| `Source code (zip)` | Any | Full monorepo source |
-| `Source code (tar.gz)` | Any | Full monorepo source |
-
-**Installation from release bundle (Linux/macOS):**
-
-```bash
-# Download and extract
-curl -L https://github.com/Itkdaniel/portfolio-project/releases/download/v1.0.0/synaptiq-api-linux-amd64.tar.gz | tar xz
-cd synaptiq-api
-
-# Set environment variables
-export DATABASE_URL=postgresql://...
-export CLERK_SECRET_KEY=sk_live_...
-export SESSION_SECRET=$(openssl rand -hex 32)
-export PORT=5000
-
-# Run
-node server.cjs
-```
-
-**Installation from release bundle (Windows):**
-
-```powershell
-# Download and extract
-Expand-Archive synaptiq-api-windows-amd64.zip -DestinationPath synaptiq-api
-Set-Location synaptiq-api
-
-# Set environment variables
-$env:DATABASE_URL = "postgresql://..."
-$env:CLERK_SECRET_KEY = "sk_live_..."
-$env:SESSION_SECRET = (New-Guid).ToString("N") + (New-Guid).ToString("N")
-$env:PORT = "5000"
-
-# Run
-node server.cjs
-```
+| Version | Date | Description |
+|---|---|---|
+| [v2.0.0](https://github.com/Itkdaniel/portfolio-project/releases/tag/v2.0.0) | 2026-07-16 | **Python 3.12 FastAPI backend** (this release) — 85 tests, Factory Boy + POM, Alembic, separate dev/prod Docker |
+| [v1.0.0](https://github.com/Itkdaniel/portfolio-project/tree/typescript-backend) | 2026 | TypeScript/Express backend (preserved on `typescript-backend` branch) |
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
-
----
+MIT © 2026 Synaptic Applications (Itkdaniel). See [LICENSE](LICENSE).
 
 ## Copyright
 
-Copyright (c) 2026 **Synaptic Applications** (Itkdaniel).
-
-All source files carry the copyright notice:
-
-```
-// Copyright (c) 2026 Synaptic Applications (Itkdaniel). MIT License.
-```
+Copyright © 2026 Synaptic Applications. All source files carry the MIT copyright header.
