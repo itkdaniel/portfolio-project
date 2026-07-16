@@ -86,13 +86,13 @@ def test_train_accuracy_scales_with_rows(row_count: int, expected_min_acc: float
 # DDT: UserRole enum validation
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("role", [UserRole.admin, UserRole.user])
+@pytest.mark.parametrize("role", [UserRole.admin, UserRole.user, UserRole.guest])
 def test_user_role_update_valid_roles(role: UserRole):
     body = UserRoleUpdateIn(role=role)
     assert body.role == role
 
 
-@pytest.mark.parametrize("invalid_role", ["superuser", "guest", "root", "", None])
+@pytest.mark.parametrize("invalid_role", ["superuser", "root", "", None])
 def test_user_role_update_invalid_roles(invalid_role):
     from pydantic import ValidationError
     with pytest.raises((ValidationError, Exception)):
@@ -104,6 +104,7 @@ def test_user_role_update_invalid_roles(invalid_role):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("role,email", [
+    (UserRole.guest, "guest@test.com"),
     (UserRole.user, "user@test.com"),
     (UserRole.admin, "admin@test.com"),
 ])

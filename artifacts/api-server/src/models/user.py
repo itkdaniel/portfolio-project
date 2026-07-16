@@ -17,9 +17,24 @@ from src.database import Base
 
 
 class UserRole(str, enum.Enum):
-    """RBAC role enumeration. First-provisioned user becomes admin."""
-    admin = "admin"
+    """
+    RBAC role enumeration.
+
+    Hierarchy (lowest → highest): guest < user < admin
+
+    - guest : default for newly registered users; read-only access to
+              dashboard, graph, team, and profile — no pipeline or tests.
+    - user  : standard member; full access except admin panel.
+    - admin : first-provisioned user; unrestricted access.
+    """
+    guest = "guest"
     user = "user"
+    admin = "admin"
+
+    # Numeric weights — used for comparison in require_* dependencies.
+    @property
+    def level(self) -> int:
+        return {"guest": 0, "user": 1, "admin": 2}[self.value]
 
 
 class User(Base):
@@ -37,7 +52,7 @@ class User(Base):
     last_name: Mapped[str | None] = mapped_column(String, nullable=True)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role"), nullable=False, default=UserRole.user
+        Enum(UserRole, name="user_role"), nullable=False, default=UserRole.guest
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

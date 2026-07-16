@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 
 from src.database import DBSession
 from src.models.user import User
-from src.routers.users import get_current_user
+from src.routers.users import get_current_user, require_user
 from src.schemas.agent import (
     DataSourceOut,
     FeatureSetOut,
@@ -40,7 +40,7 @@ async def list_data_sources(
 async def run_scrape(
     body: ScrapeIn,
     db: DBSession = None,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_user),
 ) -> ScrapeJobOut:
     svc = AgentService(db)
     await svc.ensure_data_sources_seeded()

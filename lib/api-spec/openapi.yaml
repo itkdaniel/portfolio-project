@@ -699,7 +699,7 @@ components:
 
     UserRole:
       type: string
-      enum: [admin, user]
+      enum: [guest, user, admin]
 
     User:
       type: object

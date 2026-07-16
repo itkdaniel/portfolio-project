@@ -45,7 +45,7 @@ class UserService(BaseService[User]):
         # Count existing users to decide role (first user = admin)
         count_result = await self.db.execute(select(func.count()).select_from(User))
         total = count_result.scalar_one()
-        role = UserRole.admin if total == 0 else UserRole.user
+        role = UserRole.admin if total == 0 else UserRole.guest
 
         user = User(
             clerk_user_id=clerk_user.clerk_user_id,

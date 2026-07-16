@@ -26,6 +26,22 @@ async def get_current_user(
     return await svc.resolve_local_user(clerk_user)
 
 
+async def require_user(user: User = Depends(get_current_user)) -> User:
+    """
+    Raise 403 if the resolved user is in the `guest` role.
+
+    This enforces the role hierarchy: user and admin pass through,
+    guest is blocked. Use for Pipeline, Tests, and any write endpoints.
+    """
+    if user.role.level < UserRole.user.level:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This feature requires a full account. "
+                   "Ask an admin to upgrade your role from guest to user.",
+        )
+    return user
+
+
 async def require_admin(user: User = Depends(get_current_user)) -> User:
     """Raise 403 unless the resolved user has the admin role."""
     if user.role != UserRole.admin:

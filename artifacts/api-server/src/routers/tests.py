@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 
 from src.database import DBSession
 from src.models.user import User
-from src.routers.users import get_current_user, require_admin
+from src.routers.users import get_current_user, require_admin, require_user
 from src.schemas.tests import TestRunIn, TestRunOut
 from src.services.test_service import TestService
 
@@ -31,7 +31,7 @@ async def run_test_suite(
 @router.get("/", response_model=list[TestRunOut], summary="List test run history")
 async def list_test_runs(
     db: DBSession = None,
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_user),
 ) -> list[TestRunOut]:
     svc = TestService(db)
     runs = await svc.list_runs()

@@ -1,34 +1,41 @@
+// Copyright © 2026 Synaptic Applications (Itkdaniel). MIT License.
 import { Link, useLocation } from "wouter";
 import { useClerk, useUser } from "@clerk/react";
 import { useGetCurrentUser } from "@workspace/api-client-react";
-import { 
-  Activity, 
-  Users, 
-  UserCircle, 
-  GitBranch, 
-  Network, 
-  Settings, 
+import {
+  Activity,
+  Users,
+  UserCircle,
+  GitBranch,
+  Network,
+  Settings,
   LogOut,
-  LayoutDashboard
+  LayoutDashboard,
+  Lock,
+  Info,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+
+/** Routes that require at least the "user" role — guests are locked out. */
+const GUEST_LOCKED_ROUTES = new Set(["/pipeline", "/tests"]);
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { signOut } = useClerk();
   const { user: clerkUser } = useUser();
   const { data: user, isLoading } = useGetCurrentUser();
-  
+
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+  const isGuest = user?.role === "guest";
 
   const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/pipeline", label: "Pipeline", icon: GitBranch },
+    { href: "/dashboard",       label: "Dashboard",       icon: LayoutDashboard },
+    { href: "/pipeline",        label: "Pipeline",        icon: GitBranch },
     { href: "/knowledge-graph", label: "Knowledge Graph", icon: Network },
-    { href: "/tests", label: "Tests", icon: Activity },
-    { href: "/team", label: "Team Directory", icon: Users },
-    { href: "/profile", label: "My Profile", icon: UserCircle },
+    { href: "/tests",           label: "Tests",           icon: Activity },
+    { href: "/team",            label: "Team Directory",  icon: Users },
+    { href: "/profile",         label: "My Profile",      icon: UserCircle },
   ];
 
   if (user?.role === "admin") {
@@ -46,18 +53,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </svg>
           <span className="font-bold text-lg tracking-tight">Synaptiq</span>
         </div>
-        
+
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = location === item.href || location.startsWith(`${item.href}/`);
+            const locked = isGuest && GUEST_LOCKED_ROUTES.has(item.href);
+
             return (
               <Link key={item.href} href={item.href}>
                 <Button
                   variant={isActive ? "secondary" : "ghost"}
-                  className={`w-full justify-start gap-3 ${isActive ? "bg-secondary/50 font-medium" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`w-full justify-start gap-3 ${
+                    isActive
+                      ? "bg-secondary/50 font-medium"
+                      : locked
+                      ? "text-muted-foreground/50 hover:text-muted-foreground/70"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {locked && <Lock className="h-3 w-3 shrink-0 opacity-60" />}
                 </Button>
               </Link>
             );
@@ -81,8 +97,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </span>
             </div>
           </div>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             className="w-full justify-start text-muted-foreground gap-3"
             onClick={() => signOut({ redirectUrl: basePath || "/" })}
           >
@@ -94,6 +110,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        {/* Guest upgrade banner */}
+        {isGuest && (
+          <div className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-cyan-950/60 border-b border-cyan-800/40 text-xs text-cyan-300">
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              You're on a <strong>guest account</strong> — Pipeline and Tests are locked.
+              Ask an admin to upgrade your role for full access.
+            </span>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto bg-background/50">
           <div className="p-6 md:p-8 max-w-7xl mx-auto">
             {children}
