@@ -1,3 +1,4 @@
+// Copyright © 2026 Synaptic Applications (Itkdaniel). MIT License.
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -8,8 +9,9 @@ import { dark } from "@clerk/themes";
 import { useEffect, useRef } from "react";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/Layout";
+import { GuestLayout } from "@/components/GuestLayout";
 
-// Page imports
+// Page imports — authenticated
 import Dashboard from "@/pages/Dashboard";
 import Profile from "@/pages/Profile";
 import Team from "@/pages/Team";
@@ -18,6 +20,12 @@ import Pipeline from "@/pages/Pipeline";
 import KnowledgeGraph from "@/pages/KnowledgeGraph";
 import Tests from "@/pages/Tests";
 import AdminUsers from "@/pages/AdminUsers";
+
+// Page imports — public / guest
+import Landing from "@/pages/Landing";
+import GuestDashboard from "@/pages/GuestDashboard";
+import GuestGraph from "@/pages/GuestGraph";
+import GuestTeam from "@/pages/GuestTeam";
 
 const queryClient = new QueryClient();
 
@@ -115,36 +123,7 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
-function Home() {
-  return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center bg-background text-foreground relative overflow-hidden">
-      <div className="absolute inset-0 z-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/10 via-background to-background"></div>
-      <div className="z-10 text-center max-w-3xl px-4">
-        <div className="mb-8 flex justify-center">
-          <svg width="64" height="64" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="40" height="40" rx="8" fill="hsl(var(--card))"/>
-            <path d="M12 28L20 12L28 28M14 24H26" stroke="hsl(var(--primary))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
-        <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6">
-          Synaptiq
-        </h1>
-        <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
-          The synaptic intelligence platform. Scrape live data, forge knowledge graphs, run AI agent pipelines, and inspect team health — all in one place.
-        </p>
-        <div className="flex gap-4 justify-center">
-          <a href={`${basePath}/sign-in`} className="bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-3 rounded-md font-medium transition-colors">
-            Sign In
-          </a>
-          <a href={`${basePath}/sign-up`} className="bg-secondary text-secondary-foreground hover:bg-secondary/80 px-8 py-3 rounded-md font-medium transition-colors">
-            Sign Up
-          </a>
-        </div>
-      </div>
-    </div>
-  );
-}
-
+/** Root: signed-in → /dashboard, signed-out → Landing page */
 function HomeRedirect() {
   return (
     <>
@@ -152,12 +131,13 @@ function HomeRedirect() {
         <Redirect to="/dashboard" />
       </Show>
       <Show when="signed-out">
-        <Home />
+        <Landing />
       </Show>
     </>
   );
 }
 
+/** Authenticated app — all routes that require sign-in */
 function AuthenticatedApp() {
   return (
     <Layout>
@@ -173,6 +153,20 @@ function AuthenticatedApp() {
         <Route component={NotFound} />
       </Switch>
     </Layout>
+  );
+}
+
+/** Guest explore routes — publicly accessible, no auth required */
+function GuestApp() {
+  return (
+    <GuestLayout>
+      <Switch>
+        <Route path="/explore" component={GuestDashboard} />
+        <Route path="/explore/graph" component={GuestGraph} />
+        <Route path="/explore/team" component={GuestTeam} />
+        <Route component={NotFound} />
+      </Switch>
+    </GuestLayout>
   );
 }
 
@@ -210,9 +204,20 @@ function ClerkProviderWithRoutes() {
       <QueryClientProvider client={queryClient}>
         <ClerkQueryClientCacheInvalidator />
         <Switch>
+          {/* Public routes */}
           <Route path="/" component={HomeRedirect} />
           <Route path="/sign-in/*?" component={SignInPage} />
           <Route path="/sign-up/*?" component={SignUpPage} />
+
+          {/* Guest explore routes — no auth needed */}
+          <Route path="/explore">
+            <GuestApp />
+          </Route>
+          <Route path="/explore/:rest*">
+            <GuestApp />
+          </Route>
+
+          {/* Authenticated routes */}
           <Route>
             <Show when="signed-in">
               <AuthenticatedApp />

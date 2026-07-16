@@ -19,7 +19,7 @@ export default function Dashboard() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
         <p className="text-muted-foreground mt-2">
-          Welcome back, {user?.firstName || "Operator"}. Here is the current state of the Nexus pipeline.
+          Welcome back, {user?.firstName || "Operator"}. Here is the current state of the Synaptiq pipeline.
         </p>
       </div>
 

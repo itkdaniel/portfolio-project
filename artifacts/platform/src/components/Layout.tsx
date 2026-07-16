@@ -44,7 +44,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <rect width="40" height="40" rx="8" fill="hsl(var(--background))"/>
             <path d="M12 28L20 12L28 28M14 24H26" stroke="hsl(var(--primary))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-          <span className="font-bold text-lg tracking-tight">Nexus</span>
+          <span className="font-bold text-lg tracking-tight">Synaptiq</span>
         </div>
         
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
